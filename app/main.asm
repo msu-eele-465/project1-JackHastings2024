@@ -20,11 +20,23 @@ RESET       mov.w   #__STACK_END,SP         ; Initialize stack pointer
 StopWDT     mov.w   #WDTPW+WDTHOLD,&WDTCTL  ; Stop WDT
 
 init:
-            ; set P1.0 as an output
+            ; set P1.0  and P6.1 as an output
             bis.b   #BIT0, &P1DIR
+            bic.b	#BIT0, &P1OUT			;Set off
+            bis.b 	#BIT6, &P6DIR
+			bic.b	#BIT6, &P6OUT			;Set off
 
             ; Disable low-power mode
             bic.w   #LOCKLPM5,&PM5CTL0
+
+            ;-----Setup Timer B0
+			bis.w	#TBCLR, &TB0CTL				; Clear timer and dividers
+			bis.w	#TBSSEL__ACLK, &TB0CTL		; Select ACLK as timer source
+			bis.w 	#MC__CONTINUOUS, &TB0CTL 	; Choose continuous counting
+			bis.w	#CNTL_1, &TB0CTL			; Using N = 2^12
+			bis.w	#ID__8, &TB0CTL				; Setting d1 = 8 (d2 is Default 1) d1*d2 = D = 8
+			bis.w	#TBIE, &TB0CTL				; Enable Overflow Interupt
+			bic.w	#TBIFG, &TB0CTL				; Clear interupt flag
 
 
 main:
@@ -66,6 +78,22 @@ delayloop_inner  dec.w R15                   ; 3 cycles per iteration
                 jnz delayloop_outer
 
                 ret
+;------------------------------------------------------------------------------
+;Interupt Service Routines
+;------------------------------------------------------------------------------
+
+TimerB0_1s:		;Flips red LED1 on and off at a 1 sec interval
+		xor.b	#BIT6, &P6OUT
+		bic.w	#TBIFG, &TB0CTL	; TB0 Flag Reset
+		reti
+;--------------------End TimerB0_1s -------------------------------------------
+
+;------------------------------------------------------------------------------
+; Stack Pointer definition
+;------------------------------------------------------------------------------
+            .global __STACK_END
+            .sect   .stack
+
 
 ;------------------------------------------------------------------------------
 ;           Interrupt Vectors
@@ -73,3 +101,6 @@ delayloop_inner  dec.w R15                   ; 3 cycles per iteration
             .sect   RESET_VECTOR            ; MSP430 RESET Vector
             .short  RESET                   ;
             .end
+
+            .sect	".int42"				;Timer Interrupt for 1 Second Timer
+            .short	TimerB0_1s
