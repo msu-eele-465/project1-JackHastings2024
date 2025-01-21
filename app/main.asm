@@ -9,7 +9,7 @@
                                             ; make it known to linker.
 
             .global __STACK_END
-            .sect   .stack                  ; Make stack linker segment ?known?
+            .sect   .stack                  ; Define stack linker segment
 
             .text                           ; Assemble to Flash memory
             .retain                         ; Ensure current section gets linked
@@ -20,14 +20,14 @@ RESET       mov.w   #__STACK_END,SP         ; Initialize stack pointer
 StopWDT     mov.w   #WDTPW+WDTHOLD,&WDTCTL  ; Stop WDT
 
 init:
-            ; set P1.0  and P6.1 as an output
+            ; Set P1.0 and P6.1 as outputs
             bis.b   #BIT0, &P1DIR
-            bic.b	#BIT0, &P1OUT			;Set off
-            bis.b 	#BIT6, &P6DIR
-			bic.b	#BIT6, &P6OUT			;Set off
+            bic.b   #BIT0, &P1OUT          ; Ensure P1.0 is off
+            bis.b   #BIT6, &P6DIR
+            bic.b   #BIT6, &P6OUT          ; Ensure P6.1 is off
 
             ; Disable low-power mode
-            bic.w   #LOCKLPM5,&PM5CTL0
+            bic.w   #LOCKLPM5, &PM5CTL0
 
             ;-----Setup Timer B0
 			bis.w	#TBCLR, &TB0CTL				; Clear timer and dividers
@@ -37,56 +37,55 @@ init:
 			bis.w	#ID__8, &TB0CTL				; Setting d1 = 8 (d2 is Default 1) d1*d2 = D = 8
 			bis.w	#TBIE, &TB0CTL				; Enable Overflow Interupt
 			bic.w	#TBIFG, &TB0CTL				; Clear interupt flag
-
+			bis.w	#GIE, SR					; Enable global interupts
 
 main:
+            mov.w   #1045, R14                ; Set delay_ms to delay for 1000 ms (1 s)
+            call    #delay_loop
 
-            mov.w #1000, R14                ; set delay_ms to delay for 1000 ms (1 s)
-            call #delay_loop
+            xor.b   #BIT0, &P1OUT            ; Toggle P1.0 every 1 s
 
-            xor.b   #BIT0,&P1OUT            ; Toggle P1.0 every 0.1s
-
-            jmp main
+            jmp     main
             nop
 
-; delay_ms
-; Delay for a desired number of ms
+; delay_loop
+; Delay for a desired number of milliseconds
 ;
 ; Inputs:
-;   
+;   R14: Number of milliseconds to delay
+;
 delay_loop:
 
-; inner loop timing calculation:
+; Inner loop timing calculation:
 ;   3 cycles per iteration * 332 iterations = 996 cycles
 ;   mov.w to setup loop counter: 2 cycles
 ;   996 + 2 = 998 --> need two extra nop cycles
 
-                ; setup inner loop counter
-delayloop_outer  mov.w #332, R15             ; 2 cycles
+                ; Setup outer loop counter
+                mov.w   #332, R15             ; 2 cycles
 
-                ; delay a couple cycles to get timing exact
-                ; TODO: need to verify timing with a scope
-                nop                         ; 1 cycle
-                nop                         ; 1 cycle
+                ; Delay a couple of cycles to get timing exact
+                nop                          ; 1 cycle
+                nop                          ; 1 cycle
 
-                ; decrement inner loop variable
-delayloop_inner  dec.w R15                   ; 3 cycles per iteration
-                jnz delayloop_inner
+                ; Decrement inner loop variable
+loop_inner:     dec.w   R15                   ; 3 cycles per iteration
+                jnz     loop_inner
 
-                ; decrement outer loop variable
-                dec.w R14
-                jnz delayloop_outer
+                ; Decrement outer loop variable
+                dec.w   R14
+                jnz     delay_loop
 
                 ret
 ;------------------------------------------------------------------------------
-;Interupt Service Routines
+; Interrupt Service Routines
 ;------------------------------------------------------------------------------
 
 TimerB0_1s:		;Flips red LED1 on and off at a 1 sec interval
 		xor.b	#BIT6, &P6OUT
 		bic.w	#TBIFG, &TB0CTL	; TB0 Flag Reset
 		reti
-;--------------------End TimerB0_1s -------------------------------------------
+;-------------------- End TimerB0_1s -------------------------------------------
 
 ;------------------------------------------------------------------------------
 ; Stack Pointer definition
@@ -94,13 +93,11 @@ TimerB0_1s:		;Flips red LED1 on and off at a 1 sec interval
             .global __STACK_END
             .sect   .stack
 
+;-------------------------------------------------------------------------------
+; Interrupt Vectors
+;-------------------------------------------------------------------------------
+            .sect   ".reset"                ; MSP430 RESET Vector
+            .short  RESET
 
-;------------------------------------------------------------------------------
-;           Interrupt Vectors
-;------------------------------------------------------------------------------
-            .sect   RESET_VECTOR            ; MSP430 RESET Vector
-            .short  RESET                   ;
-            .end
-
-            .sect	".int42"				;Timer Interrupt for 1 Second Timer
+            .sect	".int42"
             .short	TimerB0_1s
